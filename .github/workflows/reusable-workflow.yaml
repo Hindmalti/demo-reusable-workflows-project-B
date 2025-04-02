@@ -1,0 +1,56 @@
+name: Reusable Build and Deploy
+
+on:
+  workflow_call:
+    inputs:
+      go_version:
+        description: 'Go version to use'
+        required: false
+        default: '1.23'
+        type: string
+      image_name:
+        description: 'Docker image name'
+        required: true
+        type: string
+    secrets:
+      GCP_SERVICE_ACCOUNT:
+        required: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ inputs.go_version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go_version }}
+
+      - name: Build Go Application
+        run: |
+          go mod download
+          go build -v -o server
+
+      - name: Authenticate with GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t gcr.io/my-project/${{ inputs.image_name }} .
+          docker push gcr.io/my-project/${{ inputs.image_name }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy my-service \
+            --image gcr.io/my-project/${{ inputs.image_name }} \
+            --region us-central1 \
+            --platform managed \
+            --allow-unauthenticated
